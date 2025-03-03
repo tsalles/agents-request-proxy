@@ -47,18 +47,33 @@ async def agent(path: str, request: Request, api_key: str = Depends(validate_api
 
     target_url = f"{base_url}/acs/llms/agent"
 
-    # Forward request
     try:
-        logging.info(f"Forwarding: {request.method} {target_url}")
+        body = await request.json()
+        if 'data' in body:
+            if 'context' in body['data']:
+                if 'messages' not in body['data']['context']:
+                    body['data']['context']['messages'] = []
+                if 'system' in body['data']['context']:
+                    if 'dialog_turn_counter' in body['data']['context']['system']:
+                        body['data']['context']['system']['dialog_turn_counter'] = int(body['data']['context']['system']['dialog_turn_counter'])
+                else:
+                     body['data']['context']['system']['dialog_turn_counter'] = 0
+
         response = requests.request(
             method=request.method,
             url=target_url,
             headers={key: value for key, value in request.headers.items() if key.lower() != "host"},
-            data=await request.body(),
+            data=json.dumps(body),
             params=request.query_params
         )
-        return response.json()
+        result = response.json()
+        if 'data' in result:
+            if 'output' in result['data'] and 'text' in result['data']['output']:
+                result['data']['output']['text'] = '\n'.join(result['data']['output']['text'])
+        logging.info(f'{target_url} {body} {result}')
+        return result
     except requests.RequestException as e:
+        logging.info(f'ERROR: {request}')
         raise HTTPException(status_code=500, detail=f"Error forwarding request: {str(e)}")
 
 @app.api_route("/context-retrieval/{path:path}", methods=["GET", "POST"])
@@ -69,7 +84,6 @@ async def context_retrieval(path: str, request: Request, api_key: str = Depends(
 
     target_url = f"{base_url}/acs/llms/contextual_retrieval"
 
-    # Forward request
     try:
         logging.info(f"Forwarding: {request.method} {target_url}")
         response = requests.request(
